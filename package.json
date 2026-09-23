@@ -1,0 +1,12 @@
+{
+  "name": "franklin-pool-bench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Payout-math benchmark: split a tip pool in integer cents by largest remainder",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "generate": "node generate.mjs",
+    "grade": "node grade.mjs"
+  }
+}

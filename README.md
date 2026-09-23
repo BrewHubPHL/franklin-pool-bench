@@ -1,0 +1,71 @@
+# franklin-pool-bench
+
+A benchmark for exact payout math. Each case asks a model to split a coffee shop's tip pool (20% of online-order revenue) across staff by minutes worked, in whole cents, with the largest-remainder method. The answer is fully determined, so grading is an exact match.
+
+It is the allocation BrewHub PHL uses in production payroll (the "Franklin Pool"). The rules are in [`SPEC.md`](SPEC.md). They are embedded word for word in every prompt.
+
+## What makes it hard
+
+The arithmetic is easy. Following every rule exactly is not:
+
+- **Exact remainder ties.** When several workers' remainders are equal, the leftover cent goes to the email that sorts first in *plain character order*. `a-b@` beats `a_b@`, `b10@` beats `b1@` and `mo11@` beats `mo2@`. Locale-aware and "natural" sorts both get these wrong.
+- **Funding filter.** Only `online` and `agent_api` orders count, after trimming whitespace and lowercasing (so `" Agent_API "` counts). Negative subtotals count as 0.
+- **Zero-hours workers** get 0 and are left out of the split entirely.
+- **A dominant worker** holds exactly 90% of team minutes.
+- **Tiny pools** are smaller than headcount, so most of the pay comes from leftover cents.
+- **Minutes are split** across four buckets (regular, overtime, Sunday regular, Sunday overtime).
+- **Empty pools** come from POS-only orders, rounding to 0, or no orders at all.
+
+## Categories
+
+11 categories × 20 cases = 220 by default (seed `20260923`). The committed `cases.jsonl` is that default set.
+
+| category | what it tests |
+|---|---|
+| `even_split` | Divides evenly, so there is no leftover |
+| `simple_remainder` | Ordinary largest-remainder rounding |
+| `exact_ties` | Equal minutes for everyone, so the tie-break decides the leftover |
+| `email_order_traps` | Tied pairs whose character order disagrees with locale sorting |
+| `zero_hours` | One worker with 0 minutes |
+| `dominant_worker` | One worker has 90% of the minutes |
+| `tiny_pool` | Pool smaller than headcount |
+| `many_workers` | 12–16 workers, minutes split across the four buckets |
+| `funding_filter` | Mixed sources, casing, whitespace, null, negatives |
+| `bucket_split` | Minutes split across the four buckets |
+| `empty_pool` | Pool rounds to 0 |
+
+Each case line records `tie_decides`: whether a cent turns on the email tie-break rather than on the remainders. There are 34 such cases in the default set, and the grader scores them separately.
+
+## Usage
+
+Needs Node 18+ and nothing else.
+
+```sh
+node generate.mjs [--seed N] [--per-category N] [--out cases.jsonl]
+node grade.mjs cases.jsonl answers.jsonl
+```
+
+The same seed always gives the same set.
+
+Write `answers.jsonl` with one line per case: `{"id": "<case id>", "output": "<raw model text>"}`. The grader takes the outermost `{…}` from the output. A case passes only if every worker's cents match exactly. The grader reports:
+
+- pass rate per category
+- pass rate on tie-decided cases
+- how many answers don't add up to the pool
+- how many answers weren't valid JSON
+
+### Case format
+
+```json
+{"id": "exact_ties-003", "category": "exact_ties", "seed": 20260923,
+ "prompt": "…", "answer": {"ana@brewhubphl.com": 1779, "…": 1778},
+ "tie_decides": true, "input": {"workers": […], "orders": […]}}
+```
+
+`answer` lists every worker in the prompt, including 0 for anyone excluded. Emails are made up.
+
+## Answer key
+
+`allocate.mjs` implements `SPEC.md` using BigInt math, so large numbers never lose precision. With a checkout of the private production repo, setting `BREWHUB_REPO=/path/to/checkout` also compares every case against the production `allocateFranklinPool` and aborts on any disagreement. The committed set passes that check.
+
+A reference check against a solver that is correct except for its tie-break (it uses `localeCompare`) scores 214/220. All six of its misses are in the tie categories.
