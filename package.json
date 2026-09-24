@@ -8,6 +8,7 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "generate": "node generate.mjs",
-    "grade": "node grade.mjs"
+    "grade": "node grade.mjs",
+    "test": "node test.mjs"
   }
 }

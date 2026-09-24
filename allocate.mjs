@@ -11,9 +11,10 @@ export const minutesOf = (w) =>
   Math.max(0, w.regular + w.overtime + w.sunday_regular + w.sunday_overtime);
 
 /** Plain character order (UTF-16 code units), never locale collation. */
-const compareCharOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+export const compareCharOrder = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-export function allocate({ workers, orders }) {
+/** `tieBreak` exists only so the generator can simulate wrong solvers; the answer key never passes it. */
+export function allocate({ workers, orders }, tieBreak = compareCharOrder) {
   let subtotal = 0n;
   for (const o of orders) {
     if (!FUNDING_SOURCES.has(String(o.source ?? "").trim().toLowerCase())) continue;
@@ -35,7 +36,7 @@ export function allocate({ workers, orders }) {
   }));
   const leftover = Number(pool - shares.reduce((sum, s) => sum + s.cents, 0n));
   shares.sort((a, b) =>
-    a.remainder !== b.remainder ? (b.remainder > a.remainder ? 1 : -1) : compareCharOrder(a.email, b.email),
+    a.remainder !== b.remainder ? (b.remainder > a.remainder ? 1 : -1) : tieBreak(a.email, b.email),
   );
   const tieDecides =
     leftover > 0 && leftover < shares.length && shares[leftover - 1].remainder === shares[leftover].remainder;

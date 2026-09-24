@@ -3,9 +3,12 @@
  *
  * Usage: node grade.mjs cases.jsonl answers.jsonl
  * answers.jsonl lines: {"id": "...", "output": "<raw model text>"}
- * A case passes only on an exact match for every worker (missing = wrong).
+ * The answer is the last {…} block in the output that is a JSON object of
+ * numbers (see parse.mjs). A case passes only on an exact match for every
+ * worker (missing = wrong).
  */
 import { readFileSync } from "node:fs";
+import { parseOutput } from "./parse.mjs";
 
 const [casesPath, answersPath] = process.argv.slice(2);
 if (!casesPath || !answersPath) {
@@ -14,13 +17,6 @@ if (!casesPath || !answersPath) {
 }
 const readJsonl = (p) => readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 const cases = new Map(readJsonl(casesPath).map((c) => [c.id, c]));
-
-function parseOutput(text) {
-  const start = text.indexOf("{"), end = text.lastIndexOf("}");
-  if (start < 0 || end < start) return null;
-  try { return JSON.parse(text.slice(start, end + 1)); } catch { return null; }
-}
-
 
 const byCat = new Map();
 const failures = [];
