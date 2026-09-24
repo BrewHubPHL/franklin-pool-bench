@@ -69,3 +69,7 @@ Write `answers.jsonl` with one line per case: `{"id": "<case id>", "output": "<r
 `allocate.mjs` implements `SPEC.md` using BigInt math, so large numbers never lose precision. With a checkout of the private production repo, setting `BREWHUB_REPO=/path/to/checkout` also compares every case against the production `allocateFranklinPool` and aborts on any disagreement. The committed set passes that check.
 
 A reference check against a solver that is correct except for its tie-break (it uses `localeCompare`) scores 214/220. All six of its misses are in the tie categories.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
