@@ -9,6 +9,7 @@
   "scripts": {
     "generate": "node generate.mjs",
     "grade": "node grade.mjs",
-    "test": "node test.mjs"
+    "test": "node test.mjs && python3 kaggle/test_port.py",
+    "kaggle": "node kaggle/build.mjs"
   }
 }

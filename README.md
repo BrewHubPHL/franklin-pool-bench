@@ -40,7 +40,7 @@ A case in the tie categories is kept only if the tie-break decides a cent *and* 
 
 ## Usage
 
-Needs Node 18+ and nothing else.
+Needs Node 18+ and nothing else (Python 3.10+ for the Kaggle port).
 
 ```sh
 node generate.mjs [--seed N] [--per-category N] [--out cases.jsonl]
@@ -66,6 +66,23 @@ Write `answers.jsonl` with one line per case: `{"id": "<case id>", "output": "<r
 ```
 
 `answer` lists every worker in the prompt, including 0 for anyone excluded. Emails are made up.
+
+## Kaggle Benchmarks
+
+`kaggle/` ports the benchmark to [Kaggle Benchmarks](https://www.kaggle.com/benchmarks) as two tasks over the same 220 prompts:
+
+| notebook | leaderboard task | what the model gets |
+|---|---|---|
+| `kaggle/out/franklin_pool_bare.ipynb` | `Franklin Pool: tip-split payout math` | the prompt only |
+| `kaggle/out/franklin_pool_python.ipynb` | `Franklin Pool: tip-split payout math (Python tool)` | the same prompt, plus a `run_python` tool it may call |
+
+The prompt never mentions the tool, so the only difference between the two tasks is whether a code tool is available. Each task's score is the share of the 220 cases answered exactly. The notebook also prints pass rates per category and on tie-decided cases, plus unparseable answers and (with the tool) how many cases called it.
+
+- `kaggle/franklin_core.py` is the Python port of the answer key, prompt builder and parser. `python3 kaggle/test_port.py` checks it against `cases.jsonl`: every prompt byte for byte and every answer.
+- `node kaggle/build.mjs` rebuilds both notebooks (`.ipynb` and a `# %%` `.py` copy) with the cases embedded, so there's no Kaggle Dataset to attach. Rebuild after regenerating `cases.jsonl`.
+- API errors are retried up to twice. A case that still errors counts as a failure. A model that keeps calling the tool until the library's 10-round limit is scored as a wrong answer.
+
+To run: open https://www.kaggle.com/benchmarks/tasks/new, import the notebook (File → Import Notebook), run all cells, then add models from the task page. Do this once for each notebook, then group the two tasks into one benchmark.
 
 ## Answer key
 
