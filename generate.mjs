@@ -13,6 +13,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { allocate, minutesOf } from "./allocate.mjs";
+import { WRONG_TIE_BREAKS, assertIcu } from "./tiebreaks.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -52,15 +53,26 @@ function emails(n) {
   while (set.size < n) set.add(`${pick(NAMES)}${rand() < 0.4 ? int(1, 99) : ""}@brewhubphl.com`);
   return [...set];
 }
-// Pairs whose character order disagrees with locale collation / intuition.
+// Pairs whose plain character order disagrees with both locale and natural sort.
 const TRAPS = [
   ["a_b@brewhubphl.com", "a-b@brewhubphl.com"],     // '-' 0x2D < '_' 0x5F
   ["b1@brewhubphl.com", "b10@brewhubphl.com"],      // '0' 0x30 < '@' 0x40
-  ["sam@brewhubphl.com", "sam.k@brewhubphl.com"],   // '.' 0x2E < '@' 0x40
-  ["zoe@brewhubphl.com", "z0e@brewhubphl.com"],     // '0' 0x30 < 'o' 0x6F
-  ["jo+pos@brewhubphl.com", "jo@brewhubphl.com"],   // '+' 0x2B < '@' 0x40
-  ["mo2@brewhubphl.com", "mo11@brewhubphl.com"],    // '1' < '2' (not numeric order)
+  ["sam_k@brewhubphl.com", "sam.k@brewhubphl.com"], // '.' 0x2E < '_' 0x5F
+  ["ann@brewhubphl.com", "ann1@brewhubphl.com"],    // '1' 0x31 < '@' 0x40
+  ["jo@brewhubphl.com", "jo+pos@brewhubphl.com"],   // '+' 0x2B < '@' 0x40
+  ["mo1@brewhubphl.com", "mo11@brewhubphl.com"],    // '1' 0x31 < '@' 0x40, and 11 > 1
 ];
+// Emails that share a prefix and differ in digits or punctuation, where locale
+// and natural sort disagree with plain character order.
+function confusableEmails(n) {
+  const bases = [pick(NAMES), pick(NAMES)];
+  const set = new Set();
+  while (set.size < n) {
+    const b = pick(bases), s = pick(["k", "x", "pos"]);
+    set.add(`${b}${pick(["", `${int(1, 9)}`, `${int(1, 9)}${int(0, 9)}`, `.${s}`, `_${s}`, `-${s}`, `+${s}`])}@brewhubphl.com`);
+  }
+  return shuffle([...set]);
+}
 
 function worker(email, total, split = false) {
   if (!split) return { email, regular: total, overtime: 0, sunday_regular: 0, sunday_overtime: 0 };
@@ -83,7 +95,7 @@ const CATEGORIES = {
     // Equal minutes for everyone; pool chosen so leftover is 1..n-1 → tie-break decides.
     const n = int(3, 7), m = int(60, 900);
     const pool = n * int(10, 2000) + int(1, n - 1);
-    return { workers: emails(n).map((e) => worker(e, m)), orders: [online(pool)] };
+    return { workers: confusableEmails(n).map((e) => worker(e, m)), orders: [online(pool)] };
   },
   email_order_traps() {
     const [x, y] = pick(TRAPS);
@@ -183,14 +195,32 @@ ${ol}
 Reply with only a JSON object mapping every worker email above to their integer cents, e.g. {"a@x.com": 120, "b@x.com": 0}.`;
 }
 
+// ---- tie discrimination ----------------------------------------------------
+// In these categories a case is kept only if the tie-break decides a cent AND
+// every wrong tie-break in tiebreaks.mjs gets it wrong. Rejected draws still
+// consume the seeded PRNG, so the set stays reproducible.
+const TIE_CATEGORIES = new Set(["exact_ties", "email_order_traps"]);
+const MAX_DRAWS = 10_000;
+function discriminates(c, answer) {
+  const key = JSON.stringify(answer);
+  return Object.values(WRONG_TIE_BREAKS).every((cmp) => JSON.stringify(allocate(c, cmp).out) !== key);
+}
+
 // ---- run -------------------------------------------------------------------
+assertIcu();
 const lines = [];
 const counts = {};
 for (const [category, make] of Object.entries(CATEGORIES)) {
   counts[category] = { cases: 0, ties: 0 };
   for (let i = 0; i < PER; i += 1) {
-    const c = { id: `${category}-${String(i).padStart(3, "0")}`, category, ...make() };
-    const { out: answer, tieDecides } = allocate(c);
+    const id = `${category}-${String(i).padStart(3, "0")}`;
+    let c, answer, tieDecides;
+    for (let draw = 0; ; draw += 1) {
+      if (draw === MAX_DRAWS) throw new Error(`${id}: no discriminating tie case in ${MAX_DRAWS} draws`);
+      c = { id, category, ...make() };
+      ({ out: answer, tieDecides } = allocate(c));
+      if (!TIE_CATEGORIES.has(category) || (tieDecides && discriminates(c, answer))) break;
+    }
     if (allocateFranklinPool) {
       const prod = production(c);
       if (JSON.stringify(prod) !== JSON.stringify(answer)) {
