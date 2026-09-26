@@ -1,2 +1,6 @@
 __pycache__/
 node_modules/
+.DS_Store
+.env
+*.run.json
+*.task.json

@@ -9,6 +9,7 @@
 
 # %%
 import json
+import os
 
 import pandas as pd
 import kaggle_benchmarks as kbench
@@ -167,7 +168,11 @@ def solve_case(llm, case_id: str) -> dict:
     }
 
 # %%
-EVAL = pd.DataFrame({"case_id": [c["id"] for c in CASES]})
+# Local smoke test: FRANKLIN_CASE_LIMIT=N runs an evenly spaced N-case subset
+# (cases are grouped 20 per category, so N=11 gives one per category). Unset on Kaggle.
+LIMIT = int(os.environ.get("FRANKLIN_CASE_LIMIT") or 0)
+EVAL_CASES = CASES[:: -(-len(CASES) // LIMIT)][:LIMIT] if LIMIT else CASES
+EVAL = pd.DataFrame({"case_id": [c["id"] for c in EVAL_CASES]})
 
 
 @kbench.task(name="Franklin Pool: tip-split payout math")
@@ -186,13 +191,13 @@ def franklin_pool(llm) -> float:
             if pending.empty:
                 break
     rows = pd.DataFrame(list(results.values()))
-    errored = len(CASES) - len(rows)
+    errored = len(EVAL_CASES) - len(rows)
     by_cat = rows.groupby("category")["pass"].agg(["sum", "count"])
     print(by_cat.to_string())
     tie = rows[rows.tie_decides]
     print(f"tie-decided: {int(tie['pass'].sum())}/{len(tie)}")
     print(f"unparseable: {int((~rows.parsed).sum())}  sum != pool: {int((rows.parsed & ~rows.sums_to_pool).sum())}  errored: {errored}")
-    return float(rows["pass"].sum()) / len(CASES)
+    return float(rows["pass"].sum()) / len(EVAL_CASES)
 
 
 run = franklin_pool.run(kbench.llm)

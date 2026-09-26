@@ -43,6 +43,7 @@ ${blurb}
 
 220 cases in 11 categories. 40 of them turn on an email tie-break that locale-aware sort, natural sort and table order all get wrong. Source and answer key: franklin-pool-bench (\`generate.mjs\`, seed 20260923).`],
     ["code", `import json
+import os
 
 import pandas as pd
 import kaggle_benchmarks as kbench`],
@@ -76,7 +77,11 @@ def solve_case(llm, case_id: str) -> dict:
         "id": c["id"], "category": c["category"], "tie_decides": c["tie_decides"],
         "pass": passed, "parsed": got is not None, "sums_to_pool": sums,${v === "python" ? `\n        "tool_calls": len(calls), "tool_limit": response == "",` : ""}
     }`],
-    ["code", `EVAL = pd.DataFrame({"case_id": [c["id"] for c in CASES]})
+    ["code", `# Local smoke test: FRANKLIN_CASE_LIMIT=N runs an evenly spaced N-case subset
+# (cases are grouped 20 per category, so N=11 gives one per category). Unset on Kaggle.
+LIMIT = int(os.environ.get("FRANKLIN_CASE_LIMIT") or 0)
+EVAL_CASES = CASES[:: -(-len(CASES) // LIMIT)][:LIMIT] if LIMIT else CASES
+EVAL = pd.DataFrame({"case_id": [c["id"] for c in EVAL_CASES]})
 
 
 @kbench.task(name=${JSON.stringify(name)})
@@ -95,7 +100,7 @@ def ${fn}(llm) -> float:
             if pending.empty:
                 break
     rows = pd.DataFrame(list(results.values()))
-    errored = len(CASES) - len(rows)
+    errored = len(EVAL_CASES) - len(rows)
     by_cat = rows.groupby("category")["pass"].agg(["sum", "count"])
     print(by_cat.to_string())
     tie = rows[rows.tie_decides]
@@ -104,7 +109,7 @@ def ${fn}(llm) -> float:
     print(f"used the tool: {int((rows.tool_calls > 0).sum())}/{len(rows)}  "
           f"pass with tool: {int(rows[rows.tool_calls > 0]['pass'].sum())}  without: {int(rows[rows.tool_calls == 0]['pass'].sum())}  "
           f"hit the tool-round limit: {int(rows.tool_limit.sum())}")` : ""}
-    return float(rows["pass"].sum()) / len(CASES)
+    return float(rows["pass"].sum()) / len(EVAL_CASES)
 
 
 run = ${fn}.run(kbench.llm)

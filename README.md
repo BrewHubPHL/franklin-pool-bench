@@ -80,6 +80,7 @@ The prompt never mentions the tool, so the only difference between the two tasks
 
 - `kaggle/franklin_core.py` is the Python port of the answer key, prompt builder and parser. `python3 kaggle/test_port.py` checks it against `cases.jsonl`: every prompt byte for byte and every answer.
 - `node kaggle/build.mjs` rebuilds both notebooks (`.ipynb` and a `# %%` `.py` copy) with the cases embedded, so there's no Kaggle Dataset to attach. Rebuild after regenerating `cases.jsonl`.
+- To smoke-test locally after `kaggle b init`, set `FRANKLIN_CASE_LIMIT=N` to run an evenly spaced N-case subset (N=11 gives one case per category), e.g. `FRANKLIN_CASE_LIMIT=5 python3 kaggle/out/franklin_pool_bare.py`. The score is then over those N cases. Leave it unset on Kaggle.
 - API errors are retried up to twice. A case that still errors counts as a failure. A model that keeps calling the tool until the library's 10-round limit is scored as a wrong answer.
 
 To run: open https://www.kaggle.com/benchmarks/tasks/new, import the notebook (File → Import Notebook), run all cells, then add models from the task page. Do this once for each notebook, then group the two tasks into one benchmark.
