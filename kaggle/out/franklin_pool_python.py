@@ -10,6 +10,7 @@
 # %%
 import json
 import os
+import time
 
 import pandas as pd
 import kaggle_benchmarks as kbench
@@ -152,6 +153,11 @@ for c in CASES:
     c["prompt"] = build_prompt(RULES, c["workers"], c["orders"])
     assert allocate(c["workers"], c["orders"]) == c["answer"], c["id"]  # answer key self-check
 BY_ID = {c["id"]: c for c in CASES}
+# Cap output tokens. The model proxy reserves quota per call from the max, so the default
+# 64k reservation (~$1 on a frontier model) can refuse every call when daily quota runs low.
+# 32k still leaves room for the longest answer seen (~17k with reasoning); a truncated
+# answer is unparseable and fails the case, which is the right outcome.
+MAX_TOKENS = {"max_tokens": 32768}
 print(len(CASES), "cases,", sum(c["tie_decides"] for c in CASES), "tie-decided")
 
 # %%
@@ -166,7 +172,7 @@ def solve_case(llm, case_id: str) -> dict:
         return run_python_script(code)
 
     try:
-        response = llm.prompt(c["prompt"], tools=[run_python])
+        response = llm.prompt(c["prompt"], tools=[run_python], extra_api_params=MAX_TOKENS)
     except kbench.tools.base.ToolInvocationLimitExhausted:
         response = ""  # kept calling the tool and never answered: a failed case, not an API error
     got = parse_output(str(response))
@@ -183,17 +189,23 @@ def solve_case(llm, case_id: str) -> dict:
 # (cases are grouped 20 per category, so N=11 gives one per category). Unset on Kaggle.
 LIMIT = int(os.environ.get("FRANKLIN_CASE_LIMIT") or 0)
 EVAL_CASES = CASES[:: -(-len(CASES) // LIMIT)][:LIMIT] if LIMIT else CASES
-EVAL = pd.DataFrame({"case_id": [c["id"] for c in EVAL_CASES]})
+# Index by case id: the SDK keys its run cache by the row label, so retries and local
+# re-runs hit the right case instead of whatever sat at that position last time.
+EVAL = pd.DataFrame({"case_id": [c["id"] for c in EVAL_CASES]}, index=[c["id"] for c in EVAL_CASES])
 
 
 @kbench.task(name="Franklin Pool: tip-split payout math (Python tool)")
 def franklin_pool_python(llm) -> float:
     """Share of the 220 cases where every worker's cents are exactly right. Errored runs count as failures."""
     # Nested evaluate() allows one attempt, so retry cases that errored (API
-    # timeouts, rate limits) here; the cache skips cases already answered.
+    # timeouts, rate limits) here; the cache skips cases already answered. Wait
+    # between rounds so rate limits and quota reservations have time to recover.
     results, pending = {}, EVAL
     with kbench.client.enable_cache():
-        for _ in range(3):
+        for attempt in range(3):
+            if attempt:
+                print(f"retrying {len(pending)} errored case(s) after a {60 * attempt}s pause")
+                time.sleep(60 * attempt)
             runs = solve_case.evaluate(
                 llm=[llm], evaluation_data=pending, n_jobs=4, timeout=600, on_failure="continue",
             )
@@ -203,6 +215,9 @@ def franklin_pool_python(llm) -> float:
                 break
     rows = pd.DataFrame(list(results.values()))
     errored = len(EVAL_CASES) - len(rows)
+    if rows.empty:
+        print(f"every case errored ({errored}); see a per-case run for the API error")
+        return 0.0
     by_cat = rows.groupby("category")["pass"].agg(["sum", "count"])
     print(by_cat.to_string())
     tie = rows[rows.tie_decides]
