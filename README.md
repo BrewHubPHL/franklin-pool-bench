@@ -87,7 +87,7 @@ To run: open https://www.kaggle.com/benchmarks/tasks/new, import the notebook (F
 
 ## Answer key
 
-`allocate.mjs` implements `SPEC.md` using BigInt math, so large numbers never lose precision. With a checkout of the private production repo, setting `BREWHUB_REPO=/path/to/checkout` also compares every case against the production `allocateFranklinPool` and aborts on any disagreement. Re-run that check after any change to the generator before claiming the committed set matches production.
+`allocate.mjs` implements `SPEC.md` using BigInt math, so large numbers never lose precision. With a checkout of the private production repo, setting `BREWHUB_REPO=/path/to/checkout` also compares every case against the production `allocateFranklinPool` and aborts on any disagreement. The committed set passes that check against bot@adc6201 (all 220 cases, including the 40 tie cases). Re-run it after any change to the generator.
 
 `node test.mjs` checks the parser, re-derives every answer from `input`, and scores solvers that are correct except for their tie-break:
 
